@@ -1,16 +1,17 @@
-use crate::{models::user_model::{self, User},repository::mongodb_repo::{MongoRepo}};
-use mongodb::{bson::oid::ObjectId,results::{InsertOneResult}};
-use rocket::{http::Status, serde::json::{Json, self}, State, figment::value::Value};
+use crate::{models::user_model::{User},repository::mongodb_repo::{MongoRepo}};
+use mongodb::{results::{InsertOneResult}};
+use rocket::{http::{Status,Header as rocketHeader}, serde::json::{Json}, State};
 use serde::{Serialize, Deserialize};
 use pwhash::bcrypt;
-use rocket::response::status::Custom;
-use rocket::response::Responder;
+use rocket::response::{Response, status::Custom};
 use serde_json::{json, Value as JsonValue};
-use jsonwebtoken::{EncodingKey, Header, Algorithm, encode, errors::Result as jwtResult};
+use jsonwebtoken::{EncodingKey, Header, encode, decode, DecodingKey, Validation, Algorithm};
 extern crate dotenv;
 use dotenv::dotenv;
 use std::env;
 use regex::Regex;
+use chrono::{Utc, Duration};
+
 
 
 fn is_valid_email(email:&str) -> bool{
@@ -75,13 +76,13 @@ pub fn create_user(db:&State<MongoRepo>, new_user:Json<User>) -> Result<Json<Ins
         
     }
 
-    let hashPass = bcrypt::hash(new_user_data.password.to_owned()).unwrap();
+    let hash_pass = bcrypt::hash(new_user_data.password.to_owned()).unwrap();
 
     let user_data = User{
         id:None,
         name:new_user_data.name.to_owned(),
         email:new_user_data.email.to_owned(),
-        password:hashPass.to_owned()
+        password:hash_pass.to_owned()
     };
     let user_deatil = db.db_create_user(user_data);
     match user_deatil {
@@ -101,7 +102,8 @@ pub struct Login {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims{
-    sub : String
+    sub : String,
+    exp: i64
 }
 
 #[post("/login", data = "<login>")]
@@ -120,7 +122,11 @@ pub fn login(db: &State<MongoRepo>, login: Json<Login>) -> Result<Json<JsonValue
                     // Verify the password
                     if bcrypt::verify(&login_data.password, &user.password) {
                         // Passwords match, return the user
-                        let claims = Claims{sub:user.id.unwrap().to_string()};
+                        let expiration = Utc::now() + Duration::hours(1);
+                        let claims = Claims {
+                            sub: user.id.unwrap().to_string(),
+                            exp: expiration.timestamp(), // Add expiration time to the claims
+                        };
                         let secret = match env::var("SECRETKEY") {
                             Ok(v) => v.to_string(),
                             Err(_) => {
@@ -140,6 +146,15 @@ pub fn login(db: &State<MongoRepo>, login: Json<Login>) -> Result<Json<JsonValue
                                 return Err(Custom(Status::InternalServerError, json_response.into()));
                             }
                         };
+
+                        // Create a response with the token set in the header
+                        let response = Response::build()
+                            .status(Status::Ok)
+                            .header(rocketHeader::new("X-Token", &token))
+                            .finalize();
+                        println!("This is a token: {:?}",response);
+                        let our_user = decode::<Claims>(&token, &DecodingKey::from_secret(secret_key), &Validation::new(Algorithm::HS256));
+                        println!("hello: {:?}",our_user.unwrap().claims.exp);
                         Ok(Json(json!({"token":token})))
                     } else {
                         // Passwords don't match

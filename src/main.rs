@@ -2,6 +2,7 @@ mod repository;
 mod models;
 mod api;
 mod private;
+mod routes;
 
 #[macro_use]
 extern crate rocket;

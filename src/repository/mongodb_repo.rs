@@ -74,14 +74,18 @@ impl MongoRepo{
             task:new_task.task,
             description:new_task.description,
             reminder_date:new_task.reminder_date,
-            user_id:new_task.user_id
+            user_id:new_task.user_id,
+            user_email:new_task.user_email
+
         };
         let task = self.task_col.insert_one(new_task_doc,None).ok().expect("failed to load task");
         Ok(task)
     }
 
-    pub fn get_all_tasks(&self) -> Result<Vec<Task>, MongoError> {
-        let cursor = self.task_col.find(None, None).unwrap();
+    pub fn get_all_tasks(&self, email:&String) -> Result<Vec<Task>, MongoError> {
+        let filter = doc!{"user_email":email};
+        let cursor = self.task_col.find(filter, None).unwrap();
+        println!("Hey This is cursor: {:?}",cursor);
         let users = cursor.map(|doc| doc.unwrap()).collect();
         Ok(users)
     }

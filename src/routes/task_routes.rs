@@ -1,0 +1,192 @@
+use crate::{models::{task_model::Task}, repository::mongodb_repo::MongoRepo};
+use mongodb::results::InsertOneResult;
+use rocket::{http::Status, response::status::Custom, serde::json::Json,State};
+use mongodb::bson::{oid::ObjectId};
+use std::thread;
+use chrono::{DateTime, ParseError, Utc};
+use serde_json::{json, Value as JsonValue};
+extern crate dotenv;
+use crate::api::helper;
+use crate::api::middleware;
+use middleware::AuthorizedUser;
+
+fn parse_remider_date(date_str: &str) -> Result<DateTime<Utc>, ParseError> {
+    println!("Date: {}", date_str);
+    DateTime::parse_from_rfc3339(date_str).map(|dt| dt.with_timezone(&Utc))
+}
+
+
+pub fn add_reminder_route(
+    db: &State<MongoRepo>,
+    new_task: Json<Task>,
+    auth:AuthorizedUser
+) -> Result<Json<InsertOneResult>, Custom<JsonValue>> {
+    let new_task_data = new_task.into_inner();
+    println!("Check Task: {}", new_task_data.task.is_empty());
+    println!("Auth: {:?}",auth);
+    println!("id : {:?}",auth.sub);
+    println!("mail : {:?}",auth.mail);
+
+    let user_id = match ObjectId::parse_str(auth.sub){
+        Ok(object_id) => Some(object_id),
+        Err(_) => None,
+    };
+    if new_task_data.task.is_empty() {
+        let json_response = json!({"error" : "Please provide a task"});
+        return Err(Custom(Status::BadRequest, json_response.into()));
+    }
+
+    if new_task_data.description.is_empty() {
+        let json_response = json!({"error" : "Please provide a description"});
+        return Err(Custom(Status::BadRequest, json_response.into()));
+    }
+
+    // Check if the date is valid
+    if let Some(reminder_date) = new_task_data.reminder_date {
+        if reminder_date < Utc::now() {
+            let json_response = json!({"error": "Reminder date must be in the future"});
+            return Err(Custom(Status::BadRequest, json_response.into()));
+        }
+        let parse_date = match parse_remider_date(&reminder_date.to_rfc3339()) {
+            Ok(parsed_date) => parsed_date,
+            Err(_) => {
+                let json_response = json!({"error":"Date formate is not valid"});
+                return Err(Custom(Status::BadRequest, json_response.into()));
+            }
+        };
+        println!("new date: {}", parse_date);
+    }
+
+    let task_data = Task {
+        id: None,
+        task: new_task_data.task.to_owned(),
+        description: new_task_data.description.to_owned(),
+        reminder_date: new_task_data.reminder_date,
+        user_id:Some(user_id.expect("REASON")),
+        user_email: Some(auth.mail)
+    };
+    let task_detail = db.db_create_task(task_data);
+    match task_detail {
+        Ok(reminder) => Ok(Json(reminder)),
+        Err(_) => {
+            let json_response = json!({ "error": "Internal Server Error" });
+            Err(Custom(Status::InternalServerError, json_response.into()))
+        }
+    }
+}
+
+pub fn get_reminder_route(db: &State<MongoRepo>, auth:AuthorizedUser) -> Result<Json<Vec<Task>>, Custom<JsonValue>> {
+    let task_details = db.get_all_tasks(&auth.mail);
+    println!("task details :{:?}",task_details.clone().unwrap().len());
+    if task_details.clone().unwrap().len() == 0{
+        //if there are no tasks to show
+        let json_response = json!({"no reminders":"No reminders to show"});
+        return Err(Custom(Status::NotFound, json_response.into()));
+    }
+    let task_vec = match task_details {
+        Ok(tasks) => tasks,
+        Err(_) => return Err(Custom(Status::NotFound, json!({ "error": "No tasks found" }).into())),
+    };
+
+    
+    // Iterate over tasks to schedule reminders
+    for task in &task_vec {
+        if let Some(reminder_date) = task.reminder_date {
+            let now = Utc::now();
+            let email = auth.mail.clone();
+            println!("email of user: {}",email);
+            if reminder_date <= now {
+                // Send reminder when the time is equal to the Utc time
+                if reminder_date == now{
+                    if let Err(err) = helper::send_email_notification(&email, &task.task) {
+                        println!("Failed to send reminder for task {}: {}", task.task, err);
+                    } else {
+                        println!("Reminder sent for task {}", task.task);
+                    }
+                }
+            } else {
+                // Calculate the duration to wait before sending the reminder
+                let duration_until_reminder = reminder_date.signed_duration_since(now).to_std().unwrap();
+                let task_clone = task.clone();
+                thread::spawn(move || {
+                    thread::sleep(duration_until_reminder);
+                    if let Err(err) = helper::send_email_notification(&email, &task_clone.task) {
+                        println!("Failed to send reminder for task {}: {}", task_clone.task, err);
+                    } else {
+                        println!("Reminder sent for task {}", task_clone.task);
+                    }
+                });
+            }
+        }
+    }
+
+    // Return the Vec<Task> as JSON
+    Ok(Json(task_vec))
+}
+
+pub fn update_reminder_route(
+    db: &State<MongoRepo>,
+    id: String,
+    auth:AuthorizedUser,
+    new_task: Json<Task>,
+) -> Result<Json<Task>, Custom<JsonValue>> {
+    let id = id;
+    let user_id = match ObjectId::parse_str(auth.sub){
+        Ok(object_id) => Some(object_id),
+        Err(_) => None,
+    };
+    if id.is_empty() {
+        let json_response = json!({"error":"Id of task is requires"});
+        return Err(Custom(Status::BadRequest, json_response.into()));
+    }
+    let new_task_data = Task {
+        id: None,
+        task: new_task.task.to_owned(),
+        description: new_task.description.to_owned(),
+        reminder_date: new_task.reminder_date,
+        user_id:Some(user_id.expect("REASON")),
+        user_email:Some(auth.mail)
+    };
+
+    let new_task_detail = db.update_task(&id, &new_task_data);
+    match new_task_detail {
+        Ok(update) => {
+            if update.matched_count == 1 {
+                let updated_task = new_task_data;
+                return Ok(Json(updated_task));
+            } else {
+                let json_response = json!({ "error": "No tasks was updated" });
+                Err(Custom(Status::NotFound, json_response.into()))
+            }
+        }
+        Err(_) => {
+            let json_response = json!({ "error": "No tasks was updated" });
+            Err(Custom(Status::NotFound, json_response.into()))
+        }
+    }
+}
+
+pub fn delete_reminder_route(db: &State<MongoRepo>, id: String, auth:AuthorizedUser) -> Result<Json<&str>, Custom<JsonValue>> {
+    let id = id;
+    println!("{}", id);
+    if id.is_empty() {
+        let json_response = json!({"error":"Id of task is requires"});
+        return Err(Custom(Status::BadRequest, json_response.into()));
+    };
+    let deleted_task = db.delete_task(&id);
+    println!("{:?}", deleted_task);
+    match deleted_task {
+        Ok(deleted) => {
+            if deleted.deleted_count == 1 {
+                return Ok(Json("Deleted task successfully"));
+            } else {
+                let json_response = json!({ "error": "No tasks was deleted" });
+                Err(Custom(Status::NotFound, json_response.into()))
+            }
+        }
+        Err(_) => {
+            let json_response = json!({ "error": "No tasks was updated" });
+            Err(Custom(Status::NotFound, json_response.into()))
+        }
+    }
+}

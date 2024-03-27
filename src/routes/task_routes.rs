@@ -94,11 +94,11 @@ pub fn get_reminder_route(db: &State<MongoRepo>, auth:AuthorizedUser) -> Result<
         if let Some(reminder_date) = task.reminder_date {
             let now = Utc::now();
             let email = auth.mail.clone();
-            println!("email of user: {}",email);
+            // println!("email of user: {}",email);
             if reminder_date <= now {
                 // Send reminder when the time is equal to the Utc time
                 if reminder_date == now{
-                    if let Err(err) = helper::send_email_notification(&email, &task.task) {
+                    if let Err(err) = helper::send_email_notification(&email, &task.task, &task.description) {
                         println!("Failed to send reminder for task {}: {}", task.task, err);
                     } else {
                         println!("Reminder sent for task {}", task.task);
@@ -110,7 +110,7 @@ pub fn get_reminder_route(db: &State<MongoRepo>, auth:AuthorizedUser) -> Result<
                 let task_clone = task.clone();
                 thread::spawn(move || {
                     thread::sleep(duration_until_reminder);
-                    if let Err(err) = helper::send_email_notification(&email, &task_clone.task) {
+                    if let Err(err) = helper::send_email_notification(&email, &task_clone.task, &task_clone.description) {
                         println!("Failed to send reminder for task {}: {}", task_clone.task, err);
                     } else {
                         println!("Reminder sent for task {}", task_clone.task);
@@ -149,13 +149,38 @@ pub fn update_reminder_route(
     };
 
     let new_task_detail = db.update_task(&id, &new_task_data);
+    if new_task_data.task.is_empty() {
+        let json_response = json!({"error" : "Please provide a task"});
+        return Err(Custom(Status::BadRequest, json_response.into()));
+    }
+
+    if new_task_data.description.is_empty() {
+        let json_response = json!({"error" : "Please provide a description"});
+        return Err(Custom(Status::BadRequest, json_response.into()));
+    }
+
+    if let Some(reminder_date) = new_task_data.reminder_date {
+        if reminder_date < Utc::now() {
+            let json_response = json!({"error": "Reminder date must be in the future"});
+            return Err(Custom(Status::BadRequest, json_response.into()));
+        }
+        let parse_date = match parse_remider_date(&reminder_date.to_rfc3339()) {
+            Ok(parsed_date) => parsed_date,
+            Err(_) => {
+                let json_response = json!({"error":"Date formate is not valid"});
+                return Err(Custom(Status::BadRequest, json_response.into()));
+            }
+        };
+        println!("new date: {}", parse_date);
+    }
+
     match new_task_detail {
         Ok(update) => {
             if update.matched_count == 1 {
                 let updated_task = new_task_data;
                 return Ok(Json(updated_task));
             } else {
-                let json_response = json!({ "error": "No tasks was updated" });
+                let json_response = json!({ "error": "No task with given id was found" });
                 Err(Custom(Status::NotFound, json_response.into()))
             }
         }

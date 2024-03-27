@@ -45,9 +45,9 @@ pub fn is_valid_password(password:&str) -> bool{
     true
 }
 
-pub fn send_email_notification(recipient:&str, task_name:&str)->Result<(), Box<dyn Error>>{
+pub fn send_email_notification(recipient:&str, task_name:&str, task_desc:&str)->Result<(), Box<dyn Error>>{
     dotenv().ok();
-    let email_message = format!("Your {} task is due now", task_name);
+    let email_message = format!("This is a Reminder for your Task...🗒️ \n Task name : {} \n Description : {}", task_name, task_desc);
     let mail_add = match env::var("MAIL_ID") {
         Ok(mail) => mail,
         Err(e) =>  format!("No mail found {}",e)

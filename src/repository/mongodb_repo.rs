@@ -85,7 +85,6 @@ impl MongoRepo{
     pub fn get_all_tasks(&self, email:&String) -> Result<Vec<Task>, MongoError> {
         let filter = doc!{"user_email":email};
         let cursor = self.task_col.find(filter, None).unwrap();
-        println!("Hey This is cursor: {:?}",cursor);
         let users = cursor.map(|doc| doc.unwrap()).collect();
         Ok(users)
     }

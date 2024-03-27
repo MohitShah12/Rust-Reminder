@@ -1,9 +1,8 @@
 use mongodb::bson::oid::ObjectId;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
-// use std::marker::Copy;
-#[derive(Debug, Serialize, Deserialize, Clone)]
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Task{
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id : Option<ObjectId>,
@@ -11,5 +10,6 @@ pub struct Task{
     pub description : String,
     pub reminder_date: Option<DateTime<Utc>>,
     pub user_id : Option<ObjectId>, //reference of the user model
-    pub user_email : Option<String>
+    pub user_email : Option<String>,
+    pub image : Option<String>
 }

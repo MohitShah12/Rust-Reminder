@@ -4,9 +4,6 @@ use dotenv::dotenv;
 use mongodb::error::Error as MongoError;
 use chrono::{DateTime, Utc};
 use mongodb::bson::{Bson};
-// use bson::DateTime as BsonDateTime;
-// use rocket::futures::future::ok;
-// use crate::api::user_api::Login;
 
 use mongodb::{
     bson::{extjson::de::Error, oid::ObjectId, doc},
@@ -30,6 +27,8 @@ fn convert_to_bson_datetime(date: DateTime<Utc>) -> mongodb::bson::DateTime {
 
 
 impl MongoRepo{
+
+    //crearting the database
     pub fn create_db() -> Self{
         dotenv().ok();
         let uri = match env::var("MONGOURI"){
@@ -40,25 +39,29 @@ impl MongoRepo{
         println!("mongouri:{}",uri);
         let client = Client::with_uri_str(uri).unwrap();
         let db = client.database("Rust_Reminder");
+        //creating user collection
         let user_col = db.collection::<User>("users");
+        //creating task collection
         let task_col = db.collection::<Task>("tasks");
         MongoRepo { user_col,task_col }
     }
 
+    //creating new user
     pub fn db_create_user(&self , new_user:User) -> Result<InsertOneResult,Error>{
+        //getting all datas from user
         let new_user_doc = User{
             id:None,
             name:new_user.name,
             email:new_user.email,
             password:new_user.password
         };
-
+        //creating a user
         let user = self.user_col.insert_one(new_user_doc, None).ok().expect("failed to create user");
 
         Ok(user)
     }
 
-
+    //finding the user from email id
     pub fn find_user_by_email(&self, email:&str) -> Result<Option<User>, String> {
         let filter = doc! {"email": email};
         match self.user_col.find_one(filter,None) {
@@ -68,20 +71,24 @@ impl MongoRepo{
         }
     }
 
+    //creating a new task
     pub fn db_create_task(&self, new_task:Task) -> Result<InsertOneResult,Error>{
+        //getting all datas from user
         let new_task_doc = Task{
             id:None,
             task:new_task.task,
             description:new_task.description,
             reminder_date:new_task.reminder_date,
             user_id:new_task.user_id,
-            user_email:new_task.user_email
+            user_email:new_task.user_email,
+            image:new_task.image
 
         };
         let task = self.task_col.insert_one(new_task_doc,None).ok().expect("failed to load task");
         Ok(task)
     }
 
+    //getting all the tasks from the given user
     pub fn get_all_tasks(&self, email:&String) -> Result<Vec<Task>, MongoError> {
         let filter = doc!{"user_email":email};
         let cursor = self.task_col.find(filter, None).unwrap();
@@ -90,14 +97,17 @@ impl MongoRepo{
     }
 
 
-
+    //updating the task
     pub fn update_task(&self, id:&String,new_task:&Task) -> Result<UpdateResult, MongoError>{
+        //getting objectd from params
         let obj_id = ObjectId::parse_str(id).unwrap();
+        //finding task from the given id
         let filter= doc!{"_id":obj_id};
         let reminder_date_bson = match new_task.reminder_date {
             Some(date) => Some(Bson::DateTime(convert_to_bson_datetime(date))),
             None => None,
         };
+        //updating the task
         let new_doc = doc!{
             "$set":{
                 "id":new_task.id,
@@ -112,9 +122,11 @@ impl MongoRepo{
             
         }
     }
-
+    //deleting task
     pub fn delete_task(&self , id:&String) -> Result<DeleteResult, MongoError>{
+        //getting objectd from params
         let obj_id= ObjectId::parse_str(id).unwrap();
+        //finding task from the given id
         let filter = doc!{"_id":obj_id};
         match self.task_col.delete_one(filter, None) {
             Ok(result) => Ok(result),

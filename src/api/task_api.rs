@@ -27,6 +27,7 @@ pub fn add_reminder(
 
 #[get("/showreminder")]
 pub fn get_reminder(db: &State<MongoRepo>, auth:AuthUser) -> Result<Json<Vec<Task>>, Custom<JsonValue>> {
+    println!("dcgvcgh: {:?}",auth);
     task_routes::get_reminder_route(db, auth)
 }
 

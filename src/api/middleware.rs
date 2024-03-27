@@ -12,6 +12,7 @@ use crate::private::JWT_SECRET;
 
 
 
+
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AuthorizedUser {
     pub sub: String,
@@ -65,7 +66,10 @@ fn decode_jwt(token: String, secret: &'static str) -> Result<TokenData<Claims>, 
     dotenv().ok();
     let secret= secret;
     println!("{}",secret);
+    //converting secret from str slice to byte slice
     let secret_key = secret.as_bytes();
+
+    //decoding tokens
     let token = decode::<Claims>(
         &token,
         &DecodingKey::from_secret(secret_key),
@@ -82,6 +86,7 @@ fn decode_jwt(token: String, secret: &'static str) -> Result<TokenData<Claims>, 
 impl<'r> FromRequest<'r> for AuthorizedUser {
     type Error = &'static str;
     async fn from_request(request: &'r Request<'_>) -> Outcome<Self, Self::Error> {
+        //getting bearer token from user
         let auth_header = request.headers().get_one("Authorization");
         println!("Hiiii");
         println!("header: {:?}",auth_header);

@@ -12,20 +12,22 @@ use std::env;
 use chrono::{Utc, Duration};
 use crate::api::helper;
 
+//create new user : /signup
 pub fn create_user_route(db:&State<MongoRepo>, new_user:Json<User>) -> Result<Json<InsertOneResult>, Custom<JsonValue>>{
-
+    //extracting the data from the new_use and assigning to the new_user_data
     let new_user_data = new_user.into_inner();
 
+    //validating the mail
     if !(helper::is_valid_email(&new_user_data.email)){
         let json_response = json!({"error":"Please provide a valid email"});
         return Err(Custom(Status::BadRequest, json_response.into()));
     }
-
+    //validating the password
     if !helper::is_valid_password(&new_user_data.password){
         let json_response = json!({"error":"Password must contain at least 1 uppercase letter, 1 lowercase letter, 1 special character, 1 number, and be at least 5 characters long"});
         return Err(Custom(Status::BadRequest, json_response.into()));
     }
-
+    //check for existing user
     let existing_user = db.find_user_by_email(&new_user_data.email);
 
     if let Ok(_) = existing_user{
@@ -33,9 +35,9 @@ pub fn create_user_route(db:&State<MongoRepo>, new_user:Json<User>) -> Result<Js
         return Err(Custom(Status::InternalServerError, json_response.into()));   
         
     }
-
+    //making hash of password
     let hash_pass = bcrypt::hash(new_user_data.password.to_owned()).unwrap();
-
+    //creating new user
     let user_data = User{
         id:None,
         name:new_user_data.name.to_owned(),
@@ -52,12 +54,15 @@ pub fn create_user_route(db:&State<MongoRepo>, new_user:Json<User>) -> Result<Js
     }
 }
 
+//for getting mail and password from the user
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Login {
     pub email: String,
     pub password: String,
 }
 
+
+//data for token
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims{
     sub : String,
@@ -65,7 +70,7 @@ pub struct Claims{
     exp: i64
 }
 
-// #[post("/login", data = "<login>")]
+//login user : /login
 pub fn login_route(db: &State<MongoRepo>, login: Json<Login>) -> Result<Json<JsonValue>, Custom<JsonValue>> {
     dotenv().ok();
     let login_data = login.into_inner();
@@ -95,7 +100,7 @@ pub fn login_route(db: &State<MongoRepo>, login: Json<Login>) -> Result<Json<Jso
                             }
                         };
                         let secret_key = secret.as_bytes();
-
+                        //creating authentication token
                         let token = match encode(&Header::default(), &claims, &EncodingKey::from_secret(secret_key)) {
                             Ok(t)=>{
                                 println!("Your Token : {}",t);

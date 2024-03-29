@@ -85,7 +85,7 @@ impl MongoRepo{
             image:new_task.image
 
         };
-        let task = self.task_col.insert_one(new_task_doc,None).ok().expect("failed to load task");
+        let task = self.task_col.insert_one(new_task_doc,None).ok().expect("failed to create a task");
         Ok(task)
     }
     //finding user from id
@@ -98,7 +98,7 @@ impl MongoRepo{
         }
     }
 
-    //getting all the tasks from the given user
+    //getting all the tasks for the given user
     pub fn get_all_tasks(&self, id:String) -> Result<Vec<Task>, MongoError> {
         let uid = match ObjectId::from_str(id.as_str()) {
             Ok(id) => Some(id),
@@ -108,8 +108,8 @@ impl MongoRepo{
         let filter = doc!{"user_id":uid.unwrap()};
         println!("{}",filter);
         let cursor = self.task_col.find(filter, None).unwrap();
-        let users = cursor.map(|doc| doc.unwrap()).collect();
-        Ok(users)
+        let tasks = cursor.map(|doc| doc.unwrap()).collect();
+        Ok(tasks)
     }
 
     //updating the task

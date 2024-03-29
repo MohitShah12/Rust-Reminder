@@ -6,7 +6,6 @@ use jsonwebtoken::{
 extern crate dotenv;
 use dotenv::dotenv;
 use serde::{Deserialize, Serialize};
-use std::env;
 use crate::private::JWT_SECRET;
 
 
@@ -38,10 +37,7 @@ pub struct Claims {
     pub sub: String,
     pub exp: usize,
 }
-pub enum DecodeJwtHelper {
-    Ok(TokenData<Claims>),
-    Err,
-}
+
 
 fn check_data_from_token(auth_header: Option<&str>) -> Result<Vec<&str>, AuthError> {
     return if let Some(auth_string) = auth_header {

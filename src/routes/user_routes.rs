@@ -66,7 +66,6 @@ pub struct Login {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims{
     sub : String,
-    mail: String,
     exp: i64
 }
 
@@ -89,7 +88,6 @@ pub fn login_route(db: &State<MongoRepo>, login: Json<Login>) -> Result<Json<Jso
                         let expiration = Utc::now() + Duration::hours(1);
                         let claims = Claims {
                             sub: user.id.unwrap().to_string(),
-                            mail:user.email,
                             exp: expiration.timestamp(), // Add expiration time to the claims
                         };
                         let secret = match env::var("SECRETKEY") {

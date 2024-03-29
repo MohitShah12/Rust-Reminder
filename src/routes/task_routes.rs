@@ -9,7 +9,6 @@ extern crate dotenv;
 use crate::api::helper;
 use crate::api::middleware;
 use middleware::AuthorizedUser;
-use image::GenericImageView;
 
 fn parse_remider_date(date_str: &str) -> Result<DateTime<Utc>, ParseError> {
     println!("Date: {}", date_str);
@@ -17,7 +16,7 @@ fn parse_remider_date(date_str: &str) -> Result<DateTime<Utc>, ParseError> {
 }
 
 
-//add task : /api/addtask
+//add task : /api/addreminder
 pub fn add_reminder_route(
     db: &State<MongoRepo>,
     new_task: Json<Task>,
@@ -27,13 +26,17 @@ pub fn add_reminder_route(
     println!("Check Task: {}", new_task_data.task.is_empty());
     println!("Auth: {:?}",auth);
     println!("id : {:?}",auth.sub);
-    println!("mail : {:?}",auth.mail);
+    // println!("mail : {:?}",auth.mail);
 
     //getting user id from token and converting it to Option<ObjectId>
     let user_id = match ObjectId::parse_str(auth.sub){
         Ok(object_id) => Some(object_id),
         Err(_) => None,
     };
+
+    let user = db.find_user_from_id(user_id);
+    let user_email = user.unwrap().unwrap().email;
+    //println!("Hello: {:?}",user.unwrap().unwrap().email);
 
     //validating task
     if new_task_data.task.is_empty() {
@@ -71,7 +74,7 @@ pub fn add_reminder_route(
         description: new_task_data.description.to_owned(),
         reminder_date: new_task_data.reminder_date,
         user_id:Some(user_id.expect("REASON")),
-        user_email: Some(auth.mail),
+        user_email: Some(user_email),
         image: task_image.clone()
     };
     let img = image::open(task_image.as_ref().unwrap()).expect("Failed to open image");
@@ -91,7 +94,22 @@ pub fn add_reminder_route(
 //get all the reminders of user : /api/showreminders
 pub fn get_reminder_route(db: &State<MongoRepo>, auth:AuthorizedUser) -> Result<Json<Vec<Task>>, Custom<JsonValue>> {
     //from mail fecting all the mathcing reminders
-    let task_details = db.get_all_tasks(&auth.mail);
+
+    //let user_id = auth.sub;
+
+    // let user = db.find_user(user_id);
+
+     //getting user id from token and converting it to Option<ObjectId>
+    let user_id = match ObjectId::parse_str(&auth.sub){
+        Ok(object_id) => Some(object_id),
+        Err(_) => None,
+    };
+
+    let user = db.find_user_from_id(user_id);
+    let user_email = user.unwrap().unwrap().email;
+
+
+    let task_details = db.get_all_tasks(auth.sub);
     println!("task details :{:?}",task_details.clone().unwrap().len());
 
     //if users have no reminders
@@ -110,12 +128,16 @@ pub fn get_reminder_route(db: &State<MongoRepo>, auth:AuthorizedUser) -> Result<
     for task in &task_vec {
         if let Some(reminder_date) = task.reminder_date {
             let now = Utc::now();
-            let email = auth.mail.clone();
+            let email = user_email.clone();
             // println!("email of user: {}",email);
+            let img_path:String = match &task.image {
+                Some(path) => path.to_string(),
+                None => "".to_string()
+            }; 
             if reminder_date <= now {
                 // Send reminder when the time is equal to the Utc time
                 if reminder_date == now{
-                    if let Err(err) = helper::send_email_notification(&email, &task.task, &task.description) {
+                    if let Err(err) = helper::send_email_notification(&email, &task.task, &task.description,img_path) {
                         println!("Failed to send reminder for task {}: {}", task.task, err);
                     } else {
                         println!("Reminder sent for task {}", task.task);
@@ -127,7 +149,7 @@ pub fn get_reminder_route(db: &State<MongoRepo>, auth:AuthorizedUser) -> Result<
                 let task_clone = task.clone();
                 thread::spawn(move || {
                     thread::sleep(duration_until_reminder);
-                    if let Err(err) = helper::send_email_notification(&email, &task_clone.task, &task_clone.description) {
+                    if let Err(err) = helper::send_email_notification(&email, &task_clone.task, &task_clone.description,img_path) {
                         println!("Failed to send reminder for task {}: {}", task_clone.task, err);
                     } else {
                         println!("Reminder sent for task {}", task_clone.task);
@@ -151,11 +173,15 @@ pub fn update_reminder_route(
     //get id from params
     let id = id;
 
-    //get userid from toke
+    //get userid from token
     let user_id = match ObjectId::parse_str(auth.sub){
         Ok(object_id) => Some(object_id),
         Err(_) => None,
     };
+
+    let user = db.find_user_from_id(user_id);
+    let user_email = user.unwrap().unwrap().email;
+
     if id.is_empty() {
         let json_response = json!({"error":"Id of task is requires"});
         return Err(Custom(Status::BadRequest, json_response.into()));
@@ -169,7 +195,7 @@ pub fn update_reminder_route(
         description: new_task.description.to_owned(),
         reminder_date: new_task.reminder_date,
         user_id:Some(user_id.expect("REASON")),
-        user_email:Some(auth.mail),
+        user_email:Some(user_email),
         image:task_image.clone()
     };
     //validating provided task

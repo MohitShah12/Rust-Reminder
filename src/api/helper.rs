@@ -1,10 +1,11 @@
-use lettre::{Message, SmtpTransport, Transport, message::{Mailbox}};
+use lettre::{Message, SmtpTransport, Transport, message::{Mailbox, Attachment, header::{ContentType, self}, MultiPart, SinglePart}};
 use std::error::Error;
 use lettre::transport::smtp::authentication::{Credentials};
 use regex::Regex;
 extern crate dotenv;
 use dotenv::dotenv;
 use std::env;
+use std::fs;
 
 
 pub fn is_valid_email(email:&str) -> bool{
@@ -45,10 +46,19 @@ pub fn is_valid_password(password:&str) -> bool{
     true
 }
 
-pub fn send_email_notification(recipient:&str, task_name:&str, task_desc:&str)->Result<(), Box<dyn Error>>{
+pub fn send_email_notification(recipient:&str, task_name:&str, task_desc:&str, task_image_path:String)->Result<(), Box<dyn Error>>{
     dotenv().ok();
+    // let task_image_path:String = match task_image {
+    //     Some(path) => path,
+    //     None => "".to_string()
+    // };
+    //Attchment
+    let task_image_name = "Task.jpeg".to_string();
+    let task_image_path = fs::read(task_image_path.to_string()).unwrap();
+    let email_attchment = Attachment::new(task_image_name).body(task_image_path, ContentType::parse("image/jpeg").unwrap());
+
     //mail format
-    let email_message = format!("This is a Reminder for your Task...🗒️ \n Task name : {} \n Description : {}", task_name, task_desc);
+    let email_message = format!("Task name : {} \n Description : {}", task_name, task_desc);
     //getting id and password
     let mail_add = match env::var("MAIL_ID") {
         Ok(mail) => mail,
@@ -66,8 +76,14 @@ pub fn send_email_notification(recipient:&str, task_name:&str, task_desc:&str)->
     let email = Message::builder()
         .from(sender_mailbox)
         .to(recipient_mailbox)
-        .subject("Task Reminder")
-        .body(email_message)
+        .subject("This is a Reminder for your Task...🗒️")
+        .multipart(MultiPart::mixed()
+                .singlepart(SinglePart::builder()
+                                .header(header::ContentType::TEXT_HTML)
+                                .body(email_message)
+                            )
+                .singlepart(email_attchment)
+            )
         .unwrap();
 
     let credentials = Credentials::new(mail_add.to_string(), pass.to_string());

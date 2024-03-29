@@ -16,7 +16,6 @@ use crate::private::JWT_SECRET;
 #[derive(Debug, Deserialize, Serialize)]
 pub struct AuthorizedUser {
     pub sub: String,
-    pub mail: String
 }
 
 #[derive(Debug)]
@@ -37,7 +36,6 @@ impl From<AuthError> for Status{
 #[derive(Debug, Deserialize, Serialize)]
 pub struct Claims {
     pub sub: String,
-    pub mail: String,
     pub exp: usize,
 }
 pub enum DecodeJwtHelper {
@@ -94,7 +92,6 @@ impl<'r> FromRequest<'r> for AuthorizedUser {
             Ok(vec_header) => match decode_jwt(vec_header[1].to_string(), JWT_SECRET) {
                 Ok(token_data) =>{ Outcome::Success(AuthorizedUser {
                     sub: token_data.claims.sub,
-                    mail: token_data.claims.mail
                 })},
                 Err(error) => Outcome::Error((error.into(), "Invalid User!!")),
             },

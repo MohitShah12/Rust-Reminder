@@ -1,4 +1,5 @@
 use std::env;
+use std::str::FromStr;
 extern crate dotenv;
 use dotenv::dotenv;
 use mongodb::error::Error as MongoError;
@@ -87,15 +88,29 @@ impl MongoRepo{
         let task = self.task_col.insert_one(new_task_doc,None).ok().expect("failed to load task");
         Ok(task)
     }
+    //finding user from id
+    pub fn find_user_from_id(&self, id:Option<ObjectId>) -> Result<Option<User>,String>{
+        let filter = doc!{"_id":id.unwrap()};
+        match self.user_col.find_one(filter,None){
+            Ok(Some(user)) => Ok(Some(user)),
+            Ok(None) => Err(String::from("No users found")),
+            Err(e) => Err(format!("Error: {}",e)) 
+        }
+    }
 
     //getting all the tasks from the given user
-    pub fn get_all_tasks(&self, email:&String) -> Result<Vec<Task>, MongoError> {
-        let filter = doc!{"user_email":email};
+    pub fn get_all_tasks(&self, id:String) -> Result<Vec<Task>, MongoError> {
+        let uid = match ObjectId::from_str(id.as_str()) {
+            Ok(id) => Some(id),
+            Err(_) => None
+        };
+        println!("{:?}",uid.unwrap());
+        let filter = doc!{"user_id":uid.unwrap()};
+        println!("{}",filter);
         let cursor = self.task_col.find(filter, None).unwrap();
         let users = cursor.map(|doc| doc.unwrap()).collect();
         Ok(users)
     }
-
 
     //updating the task
     pub fn update_task(&self, id:&String,new_task:&Task) -> Result<UpdateResult, MongoError>{
